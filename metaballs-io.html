@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="utf-8">
+        <title>p5</title>
+        
+        <link rel="preconnect" href="https://fonts.googleapis.com">
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link href="https://fonts.googleapis.com/css2?family=Anton&family=Press+Start+2P&family=Roboto:ital,wght@0,100..900;1,100..900&family=Rowdies:wght@300;400;700&family=Signika:wght@300..700&family=Space+Mono:ital,wght@0,400;0,700;1,400;1,700&family=VT323&family=Zen+Dots&display=swap" rel="stylesheet">
+        
+        <style>
+            *{
+                margin: 0;
+                overflow: hidden;
+            }
+
+            canvas {
+                padding-left: 0;
+                padding-right: 0;
+                margin-left: auto;
+                margin-right: auto;
+                display: block;
+            }
+        </style>
+    </head>
+    <body></body>
+
+    <!-- P5.js -->
+    <script src="https://cdn.jsdelivr.net/gh/NS236/p5.js-ka@main/lib/p5.js"></script>
+    <script> new p5();</script>
+        
+    <!-- MAIN -->
+    <script type>
+        
+// When you reload the webpage via the reload button on ka, the variables are not cleared, therefore trying to use let and const in the global scope will trigger an error, so everything must be wrapped in an iife
+(() => {
+
+// globals
+
+const [WIDTH, HEIGHT] = [600, 600];
+
+let delataTime = 33;
+let click = false;
+let keys = {};
+
+const copyObj = obj => JSON.parse(JSON.stringify(obj));
+
+const images = (() => {
+    return {
+
+    };
+})();
+
+// bearkirb's Vector lib
+const Vector = (() => {
+    class Vector {
+        constructor(x = 0, y = 0, z = 0) {
+            this.x = x;
+            this.y = y;
+            this.z = z;
+        }
+        subtract(v) {
+            var ve = new Vector(this.x, this.y, this.z);
+            ve.x -= v.x;
+            ve.y -= v.y;
+            ve.z -= v.z;
+            return ve;
+        }
+        add(v) {
+            var ve = new Vector(this.x, this.y, this.z);
+            ve.x += v.x;
+            ve.y += v.y;
+            ve.z += v.z;
+            return ve;
+        }
+        divide(n) {
+            var ve = new Vector(this.x, this.y, this.z);
+            ve.x /= n;
+            ve.y /= n;
+            ve.z /= n;
+            return ve;
+        }
+
+        mult(n) {
+            var ve = new Vector(this.x, this.y, this.z);
+            ve.x *= n;
+            ve.y *= n;
+            ve.z *= n;
+            return ve;
+        }
+
+        square (v) {
+            var ve = new Vector(this.x, this.y, this.z);
+            ve.x *= ve.x;
+            ve.y *= ve.y;
+            ve.z *= ve.z;
+            return ve;
+        }
+
+        magnitude() {
+            return Math.sqrt(this.x * this.x + this.y * this.y + this.z * this.z);
+        }
+        magSq() {
+            return this.x * this.x + this.y * this.y + this.z * this.z;
+        }
+        dot(v) {
+            return this.x * v.x + this.y * v.y + this.z * v.z;
+        }
+        scale(n) {
+            var ve = new Vector(this.x, this.y, this.z);
+            ve.x *= n;
+            ve.y *= n;
+            ve.z *= n;
+            return ve;
+        }
+        normalize() {
+            var ve = new Vector(this.x, this.y, this.z);
+            if (ve.x === 0 && ve.y === 0 && ve.z === 0) return ve;
+            ve = ve.divide(ve.magnitude());
+            return ve;
+        }
+        rotateBy(ang) {
+            return new Vector(this.x * Math.cos(ang) - this.y * Math.sin(ang), this.x * Math.sin(ang) + this.y * Math.cos(ang));
+        }
+        rotateAround(ang, v) {
+            var ve = new Vector(this.x, this.y, this.z);
+            ve = ve.subtract(v).rotateBy(ang).add(v);
+            return ve;
+        }
+        rotate3d(anglex, angley){
+            var ve = new Vector(this.x,this.y,this.z);
+            var ro1 = new Vector(this.y,this.z).rotateBy(-anglex);
+            var ro2 = new Vector(this.x,ro1.y).rotateBy(-angley);
+            ve.y = ro1.x
+            ve.z = ro1.y;
+                        
+            ve.x = ro2.x;
+            ve.z = ro2.y;
+            return ve;
+        }
+        reflect(n) {
+            var ve = new Vector(this.x, this.y);
+            ve = ve.subtract(n.scale(2 * ve.dot(n)))
+            return ve;
+        }
+        abs() {
+            var ve = new Vector(this.x, this.y, this.z);
+            ve.x = Math.abs(ve.x);
+            ve.y = Math.abs(ve.y);
+            ve.z = Math.abs(ve.z);
+            return ve;
+        }
+        max(n) {
+            var ve = new Vector(this.x, this.y, this.z);
+            ve.x = Math.max(ve.x, n);
+            ve.y = Math.max(ve.y, n);
+            ve.z = Math.max(ve.z, n);
+            return ve;
+        }
+        copy(v) {
+            return new Vector(this.x, this.y, this.z);
+        }
+    } 
+    return Vector;
+})();
+
+const renderMetaBalls = (() => {
+    return function (metaBalls) {
+        
+    }
+})();
+
+const scenes = (() => {
+
+    const startScene = "play";
+
+    // returns an object with a function for each scene and a function that runs the current scene. This function will also transition to a new scene at the end of the frame if necesary.
+    // the reason that the scene functions are the way they are(an iife returning a function) is so that each scene can have a local scope to store data that is only relevant to the scene.
+
+    return {
+        current: "loading",
+
+        run () {
+            this[this.current](); // run the current scene
+
+            click = false;
+
+            if (scenes.nextTransition) { // transition
+                scenes.nextTransition[1] = scenes.nextTransition[1](); // get the image of the canvas at the time of the start of the transition
+                scenes.transition(...scenes.nextTransition)
+            };
+        },
+
+        nextTransition: false,
+        transitionTo: false, // so buttons can display during the transition
+    
+        transition: (() => {
+
+            const anim1 = x => 4 *(x - 0.5) ** 3 + 0.5;
+    
+            let fromImg;
+            let to = "";
+            let amt = 0;
+            let speed = 1;
+            let data = false;
+            let sentData = false;
+            let transitionType = "slide";
+            let transitionData = false;
+    
+            return function (_to, img, _speed, _transitionType = "slide", _data, _transitionData) {
+    
+                amt += (delataTime)/1000/speed;
+                
+                if (_to) {
+
+                    // so we dont try to transition twice
+                    scenes.nextTransition = false;
+                    
+                    // reset data for the transition
+                    to = _to;
+                    scenes.transitionTo = to;
+                    transitionType = _transitionType;
+                    fromImg = img;
+                    scenes.current = "transition";
+                    amt = 0;
+                    data = _data || false;
+                    transitionData = _transitionData || false;
+                    sentData = false;
+
+                    if (_speed && _speed > 0) speed = _speed;
+                }
+    
+                if (amt < 0.5) {
+                    // display image from last scene
+                    image(fromImg, 0, 0, 600, 600);
+                } else if (amt < 1){
+                    // run the next scene
+                    if (sentData) {
+                        scenes[to]();
+                    } else {
+                        scenes[to](data);
+                        sentData = true;
+                    }
+                    
+                } else {
+                    // switch to the next scene
+                    scenes.current = to;
+                    scenes.transitionTo = false;
+                }
+        
+                if (transitionType === "shrink") {
+
+                    if (amt < 0.5) amt = 0.5; // only second half of transition
+                    const a = (amt - 0.5) * 2;
+
+                    noStroke();
+                    fill(240);
+                    rect(a * 27, a * 267, lerp(606, 306, a), lerp(606, 306, a));
+                    image(fromImg, a * 30, a * 270, lerp(600, 300, a), lerp(600, 300, a))
+
+                } else if (transitionType === "zoom") {
+
+                    const [midX, midY, scale] = [
+                        transitionData.x,
+                        transitionData.y,
+                        transitionData.scale,
+                    ];
+
+                    const [tX, tY, tWidth, tHeight] = [
+                        -(width / scale) + (300 - midX),
+                        -(height / scale) + (300 - midY),
+                        width * scale,
+                        height * scale,
+                    ]
+
+                    image(fromImg, lerp(0, tX, amt), lerp(0, tY, amt), lerp(600, tWidth, amt), lerp(600, tWidth, amt));
+
+                } else {
+
+                    // the gray square that sweeps over the screen
+                    fill(220);
+                    noStroke();
+                    rect(-600 + 1200 * anim1(amt), 0, 600, 600);
+
+                }
+                
+            }
+        })(),
+    
+        loading: (() => {
+    
+            let curInd = 0;
+            let keys = Object.keys(images);
+    
+            return function () {
+
+                background(240);
+    
+                // replace the functions in the image objects with what they return;
+                if (images[keys[curInd]]) images[keys[curInd]] = images[keys[curInd]]();
+                
+                // generate text with . for progress
+                let txt = (() => {
+    
+                    if (curInd >= keys.length - 1) return "LOADED!";
+    
+                    let res = ["LOADING"];
+                    for (let j = 0; j <= curInd / 2; j ++) {
+                        res[res.length - 1] += "."
+                        if (textWidth(res[res.length - 1]) > 550) {
+                            res[res.length - 1] += "\n";
+                            res.push("");
+                        }
+                    }
+
+                    const innitial = "";
+                    const fullRes = res.reduce(
+                       (accumulator, currentValue) => accumulator + currentValue,
+                        innitial,
+                    );
+
+                    return fullRes;
+                })();
+                
+                // Display the loading progress
+                textSize(100);
+                textFont('Anton');
+                fill(220);
+                textAlign(CENTER, BASELINE);
+    
+                text(txt, 300, 270);
+    
+                curInd ++;
+
+                if (curInd >= keys.length) {
+                    scenes.nextTransition = [startScene, get, 0.3, "slide", {}];
+                }
+            }
+        })(),
+
+        play: (() => {
+            return function () {
+                background(255);
+            }
+        })(),
+    };
+})();
+
+const drawFunction = (() => {
+
+    // for delta time calculations
+    let then = performance.now();
+
+    // not using function x() {} notation because iife. iife is simply for organization here
+    setup = function() {
+    
+        // this clears all animation frames preventing them from stacking up if the webpage is reloaded
+        // sourced from stack overflow somewhere
+        let id = window.requestAnimationFrame(function(){});
+        while (id--) {
+            window.cancelAnimationFrame(id);
+        }
+        
+        createCanvas(WIDTH, HEIGHT);
+        frameRate(60);
+    };
+    
+    draw = function() {
+
+        let now = performance.now();
+        delataTime = now - then;
+        then = now;
+
+        scenes.run();
+    };
+})();
+
+const userInput = (() => {
+    // not using function x() {} notation because iife. iife is simply for organization here
+
+    mousePressed = function() {
+        click = true;
+    }
+
+    keyPressed = function() {
+        keys[key] = keys[key.toString().toLowerCase()] = true;
+    }
+    
+    keyReleased = function() {
+        keys[key] = keys[key.toString().toLowerCase()] = false;
+    }
+})();
+
+})();
+
+    </script>
+</html>
