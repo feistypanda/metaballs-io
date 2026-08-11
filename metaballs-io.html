@@ -165,7 +165,7 @@ const Vector = (() => {
 
 const renderMetaBalls = (() => {
 
-    const tileSize = 10;
+    const tileSize = 40;
     const isovalue = 1;
 
     function getValueAtPoint (metaballs, point) {
@@ -178,8 +178,67 @@ const renderMetaBalls = (() => {
         return value;
     }
 
-    
+    const drawShape = (() => {
 
+        const sidesKey = [
+            [0, -1],
+            [1, 0],
+            [0, 1],
+            [-1, 0],
+        ];
+
+        let lastCoordsPushed = false;
+
+        return function (metaballs, graphics, x, y, prev = false, itter = 0) {
+
+            let res = drawCell(metaballs, graphics, x, y)
+            let linkedSides = res.connections;
+            let next;
+            let newPrev;
+
+            if (!linkedSides) return;
+
+            if (prev === false) {
+                next = linkedSides[0][0];
+            } else {
+                for (const i of linkedSides) {
+
+                    let ind = i.indexOf(prev);
+                    if (ind >= 0) {
+                        next = i[(ind + 1) % i.length];
+                    }
+                }
+            }
+
+            if (next !== false) newPrev = (next + 2) % 4;
+
+            let nextX = x + sidesKey[next][0] * tileSize;
+            let nextY = y + sidesKey[next][1] * tileSize;
+
+            // if (next) shapes.push([]);
+            if (res.dat) {
+                let l = lastCoordsPushed;
+                if (l.x === res.dat[0].x && l.y === res.dat[1].y) {
+                    
+                    shapes.push(res.dat[1]);
+                    lastCoordsPushed = res.dat[1];
+                    if (frameCount === 40) console.log ("hey", lastCoordsPushed);
+                } else {
+                    
+                    shapes.push(res.dat[0]);
+                    lastCoordsPushed = res.dat[0];
+                    if (frameCount === 40) console.log (lastCoordsPushed);
+                }
+                
+            }
+
+            if (frameCount === 40) console.log (linkedSides, next, prev);
+
+            if (next !== false && itter < 500) drawShape(metaballs, graphics, nextX, nextY, newPrev, itter + 1);
+        }
+    })();
+
+    // A function that draws a cell and then returns the coordinates of the cells that the lines lead into
     const drawCell = (() => {
 
         // An array that determines what lines to draw for a given combination of corners being above the isovalue
@@ -204,6 +263,37 @@ const renderMetaBalls = (() => {
             [[2, 3, 0, 3]], // 14
             [            ], // 15
         ];
+
+        // Generate a key that linkes sides together based on how the lines are drawn
+        const connectionsKey = (() => {
+            const sidesKey = {
+                "01": 0,
+                "12": 1,
+                "23": 2,
+                "30": 3,
+            };
+
+            for (const key in sidesKey) {
+                sidesKey[key[1] + key[0]] = sidesKey[key];
+            }
+
+            let key = [];
+
+            key = linesKey.map(a => {
+                if (a.length < 1) return [];
+
+                let res = a.map(b => {
+                    return [
+                        sidesKey[`${b[0]}${b[1]}`],
+                        sidesKey[`${b[2]}${b[3]}`],
+                    ]
+                });
+
+                return res;
+            });
+
+            return key;
+        })();
 
         const cornerKey = [[0, 0], [1, 0], [1, 1], [0, 1]];
 
@@ -230,6 +320,8 @@ const renderMetaBalls = (() => {
                 let toIso = isovalue - smaller.value;
                 let amt = toIso/diff;
 
+                amt = 0.5;
+
                 return [lerp(smaller.x, larger.x, amt), lerp(smaller.y, larger.y, amt)];
             }
 
@@ -246,42 +338,73 @@ const renderMetaBalls = (() => {
             }
         })();
 
+        function drawLines (x, y, graphics, lines, cornerValues) {
+
+
+            for (const i of lines) {
+                let coords = getLine(x, y, i, cornerValues);
+                // graphics.line(...getLine(x, y, i, cornerValues));
+                return [{x: coords[0], y: coords[1]}, {x: coords[2], y: coords[3]}];
+            }
+        }
+
         return function (metaballs, graphics, x, y) {
 
+            // Make sure that we havent already drawn this cell this frame
+            const key = `${x},${y}`;
+            
+            if (tilesProcessed.has(key)) return false;
+            
+
+            // Get the values at the corners of the cell
             let cornerValues = cornerKey.map(a => getValueAtPoint(metaballs, {x: x + a[0] * tileSize, y: y + a[1] * tileSize}));
 
             let code = generateCode(cornerValues);
+
+            // We dont want to prevent cells of type 5 and 10 from being drawn twice because those cells are parts of two different shapes
+            if (code !== 5 && code !== 10) tilesProcessed.add(key);
+
+            // Quit early if there are no lines to draw
+            if (code === 0 || code === 15) return false;
+
             let lines = linesKey[code];
 
-            graphics.stroke(0);
-            graphics.strokeWeight(2);
+            let linesDat = drawLines(x, y, graphics, lines, cornerValues);
 
-            for (const i of lines) {
-                
-                graphics.line(...getLine(x, y, i, cornerValues));
-            }
+            return {connections: connectionsKey[code], dat: linesDat};
         }
     })();
+
+    const tilesProcessed = new Set();
+    let shapes = [];
 
     return function (metaballs, graphics) {
         graphics.clear(0, 0);
 
-        graphics.noStroke();
-        graphics.fill(240, 0, 0, 100);
+        tilesProcessed.clear();
+        shapes = [];
 
         for (let y = 0; y < height; y += tileSize) {
             for (let x = 0; x < width; x += tileSize) {
+                drawShape(metaballs, graphics, x, y);
 
-                if (getValueAtPoint(metaballs, {x, y}) > isovalue) {
-                    
-                    graphics.noStroke();
-                    graphics.rect(x - tileSize/2, y - tileSize/2, tileSize, tileSize);
-                }
-
-                drawCell(metaballs, graphics, x, y);
-
+                rect(x, y, tileSize, tileSize);
             }
         }
+
+        // fill()
+        noFill();
+        stroke(0);
+        strokeWeight(2);
+        // for (const i of shapes) {
+            beginShape();
+
+            for (const j of shapes) {
+                vertex(j.x, j.y);
+            }
+
+            endShape();
+        // }
 
         return graphics;
     }
@@ -351,9 +474,9 @@ const {player, metaballs} = (() => {
     };
 
     metaballs.add({x: 300, y: 300, radius: 70})
-    const player = metaballs.add({x: 500, y: 300, radius: 40})
+    // const player = metaballs.add({x: 500, y: 300, radius: 40})
 
-    return {player, metaballs};
+    return {metaballs};
 })();
 
 const scenes = (() => {
@@ -544,8 +667,8 @@ const scenes = (() => {
 
             return function () {
 
-                player.x = mouseX;
-                player.y = mouseY;
+                // player.x = mouseX;
+                // player.y = mouseY;
                 
                 displayBackground();
                 displayMetaballs();
@@ -580,6 +703,13 @@ const drawFunction = (() => {
         then = now;
 
         scenes.run();
+
+        push();
+        noStroke();
+        fill(0);
+        textSize(20);
+        text(`${mouseX}, ${mouseY}`, mouseX, mouseY);
+        pop();
     };
 })();
 
