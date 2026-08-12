@@ -215,9 +215,9 @@ const renderMetaBalls = (() => {
             let nextX = x + sidesKey[next][0] * tileSize;
             let nextY = y + sidesKey[next][1] * tileSize;
 
-            // if (next) shapes.push([]);
+            if (next && prev === false) shapes.push([]);
 
-            if (res.dat) shapes.push(res.dat);
+            if (res.dat) shapes[shapes.length - 1].push(res.dat);
 
             if (next !== false && itter < 500) drawShape(metaballs, graphics, nextX, nextY, newPrev, itter + 1);
         }
@@ -359,7 +359,7 @@ const renderMetaBalls = (() => {
     })();
 
     const tilesProcessed = new Set();
-    let shapes = [];
+    let shapes = [[]];
 
     const assembleShape = (() => {
 
@@ -389,7 +389,7 @@ const renderMetaBalls = (() => {
         graphics.clear(0, 0);
 
         tilesProcessed.clear();
-        shapes = [];
+        shapes = [[]];
 
         for (let y = 0; y < height; y += tileSize) {
             for (let x = 0; x < width; x += tileSize) {
@@ -401,15 +401,18 @@ const renderMetaBalls = (() => {
         stroke(0);
         strokeWeight(2);
 
-        let shape = assembleShape(shapes);
-        beginShape();
+        for (const i of shapes) {
+            if (i.length < 1) continue;
 
-        for (const j of shape) {
-            vertex(j.x, j.y);
-        }
+            let shape = assembleShape(i);
+            beginShape();
 
-        endShape();
-        
+            for (const j of shape) {
+                vertex(j.x, j.y);
+            }
+
+            endShape();
+        }        
 
         return graphics;
     }
