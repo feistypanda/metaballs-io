@@ -163,20 +163,14 @@ const Vector = (() => {
     return Vector;
 })();
 
-const renderMetaBalls = (() => {
+// takes a SDF and boundaries as input and returns an array of meshes of shapes
+const marchingSquares = (() => {
+
+    const DISPLAY_GRID = false;
+    const LERP = true;
 
     const tileSize = 10;
     const isovalue = 1;
-
-    function getValueAtPoint (metaballs, point) {
-        let value = 0;
-
-        for (const i of metaballs) {
-            value += i.radius / Math.hypot(i.x - point.x, i.y - point.y);
-        }
-
-        return value;
-    }
 
     const getShapeMesh = (() => {
 
@@ -208,23 +202,30 @@ const renderMetaBalls = (() => {
             return next;
         }
 
-        function pushLine (res, next) {
-            if (!res.dat) return;
+        const pushLine = (() => {
 
-            if (res.dat.length === 1) {
-                shapes[shapes.length - 1].push(res.dat[0].slice(0, 2));
-                return;
+            function pushDat (dat) {
+                shapes[shapes.length - 1].push([dat.end1, dat.end2]);
             }
 
-            // If there are multiple possible lines to push, find which one connects to the current shape
-            for (const i of res.dat) {
-                if (i[2].includes(next)) shapes[shapes.length - 1].push(i.slice(0, 2));
+            return function (res, next) {
+                if (!res.dat) return;
+
+                if (res.dat.length === 1) {
+                    pushDat(res.dat[0])
+                    return;
+                }
+
+                // If there are multiple possible lines to push, find which one connects to the current shape
+                for (const i of res.dat) {
+                    if (i.connections.includes(next)) pushDat(i);
+                }
             }
-        }
+        })();
 
-        return function (metaballs, x, y, prev = null, itter = 0) {
+        return function (SDF, x, y, prev = null, itter = 0) {
 
-            let res = marchingSquaresCell(metaballs, x, y);
+            let res = marchingSquaresCell(SDF, x, y);
             if (!res) return;
             if (prev === null) shapes.push([]); // starting a new shape
 
@@ -237,7 +238,7 @@ const renderMetaBalls = (() => {
 
             pushLine(res, next); 
 
-            if (next !== false && itter < 500) getShapeMesh(metaballs, nextX, nextY, newPrev, itter + 1);
+            if (next !== false && itter < 500) getShapeMesh(SDF, nextX, nextY, newPrev, itter + 1);
         }
     })();
 
@@ -328,6 +329,8 @@ const renderMetaBalls = (() => {
                 let toIso = isovalue - smaller.value;
                 let amt = toIso/diff;
 
+                if (!LERP || mouseIsPressed) amt = 0.5;
+
                 return [lerp(smaller.x, larger.x, amt), lerp(smaller.y, larger.y, amt)];
             }
 
@@ -356,13 +359,13 @@ const renderMetaBalls = (() => {
                     sidesKey[`${i[2]}${i[3]}`]
                 ];
 
-                res.push([{x: coords[0], y: coords[1]}, {x: coords[2], y: coords[3]}, connections]);
+                res.push({end1: {x: coords[0], y: coords[1]}, end2: {x: coords[2], y: coords[3]}, connections});
             }
 
             return res;
         }
 
-        return function (metaballs, x, y) {
+        return function (SDF, x, y) {
 
             // Make sure that we havent already drawn this cell this frame
             const key = `${x},${y}`;
@@ -370,7 +373,7 @@ const renderMetaBalls = (() => {
             if (tilesProcessed.has(key)) return false;
 
             // Get the values at the corners of the cell
-            let cornerValues = cornerKey.map(a => getValueAtPoint(metaballs, {x: x + a[0] * tileSize, y: y + a[1] * tileSize}));
+            let cornerValues = cornerKey.map(a => SDF({x: x + a[0] * tileSize, y: y + a[1] * tileSize}));
 
             let code = generateCode(cornerValues);
 
@@ -415,48 +418,43 @@ const renderMetaBalls = (() => {
         }
     })();
 
-    function reset (graphics) {
-        graphics.clear(0, 0);
+    function generateMeshes (SDF) {
 
-        tilesProcessed.clear();
         shapes = [];
-    }
+        tilesProcessed.clear();
 
-    function generateMeshes (metaballs) {
+        if (DISPLAY_GRID) {
+            stroke(0);
+            strokeWeight(2);
+        }
+
         for (let y = 0; y < height; y += tileSize) {
             for (let x = 0; x < width; x += tileSize) {
-                getShapeMesh(metaballs, x, y);
+
+                if (DISPLAY_GRID) rect(x, y, tileSize, tileSize);
+                getShapeMesh(SDF, x, y);
             }
         }
     }
 
-    function displayMetaballs (graphics) {
-        graphics.fill(200, 20, 20, 200);
-        graphics.stroke(0);
-        graphics.strokeWeight(2);
-        graphics.noStroke();
+    function getShapes () {
+
+        let assembled = [];
 
         for (const i of shapes) {
             if (i.length < 1) continue;
 
-            let shape = assembleShape(i);
-            graphics.beginShape();
-
-            for (const j of shape) {
-                graphics.vertex(j.x, j.y);
-            }
-
-            graphics.endShape();
+            assembled.push(assembleShape(i));
         }
+
+        return assembled;
     }
 
-    return function (metaballs, graphics) {
+    return function (SDF) {
         
-        reset(graphics);
-        generateMeshes(metaballs);
-        displayMetaballs(graphics);
+        generateMeshes(SDF);
 
-        return graphics;
+        return getShapes();
     }
 })();
 
@@ -528,6 +526,8 @@ const {player, metaballs} = (() => {
 
     return {player, metaballs};
 })();
+    
+const mover = metaballs.add({x: 500, y: 500, radius: 40})
 
 const scenes = (() => {
 
@@ -711,14 +711,43 @@ const scenes = (() => {
                 background(200);
             }
 
-            function displayMetaballs () {
-                image(renderMetaBalls(metaballs.metaballs, metaballsGraphics), 0, 0);
-            }
+            const displayMetaballs = (() => {
+
+                function SDF (point) {
+                    let value = 0;
+
+                    for (const i of metaballs.metaballs) {
+                        value += i.radius / Math.hypot(i.x - point.x, i.y - point.y);
+                    }
+
+                    return value;
+                }
+
+                return function displayMetaballs () {
+                    let meshes = marchingSquares(SDF);
+
+                    fill(240, 20, 20, 200);
+                    stroke(20);
+                    strokeWeight(5);
+
+                    for (const i of meshes) {
+                        beginShape();
+
+                        for (const j of i) {
+                            vertex(j.x, j.y);
+                        }
+
+                        endShape();
+                    }
+                }
+            })();
 
             return function () {
 
                 player.x = mouseX;
                 player.y = mouseY;
+
+                mover.x = 300 + Math.sin(frameCount/100) * 200;
                 
                 displayBackground();
                 displayMetaballs();
@@ -753,6 +782,15 @@ const drawFunction = (() => {
         then = now;
 
         scenes.run();
+
+        push();
+        noStroke();
+        fill(0);
+        textSize(20);
+        textAlign(LEFT, TOP);
+        text(Math.floor(frameRate()), 20, 20);
+
+        pop();
     };
 })();
 
