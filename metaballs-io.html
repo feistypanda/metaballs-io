@@ -50,7 +50,7 @@ const images = (() => {
     };
 })();
 
-// bearkirb's Vector lib
+// BearKirb's Vector lib
 const Vector = (() => {
     class Vector {
         constructor(x = 0, y = 0, z = 0) {
@@ -169,8 +169,10 @@ const marchingSquares = (() => {
     const DISPLAY_GRID = false;
     const LERP = true;
 
-    const tileSize = 10;
+    let tileSize = 10;
     const isovalue = 1;
+
+    const tilesProcessed = new Set();
 
     const getShapeMesh = (() => {
 
@@ -180,8 +182,6 @@ const marchingSquares = (() => {
             [0, 1],
             [-1, 0],
         ];
-
-        let lastCoordsPushed = false;
 
         // figure out which side the line in the current cell is leading into
         const getNext = (linkedSides, prev) => {
@@ -202,43 +202,49 @@ const marchingSquares = (() => {
             return next;
         }
 
-        const pushLine = (() => {
+        const getLineDat = (() => {
 
-            function pushDat (dat) {
-                shapes[shapes.length - 1].push([dat.end1, dat.end2]);
+            function getDat (dat) {
+                return [dat.end1, dat.end2];
             }
 
             return function (res, next) {
                 if (!res.dat) return;
 
-                if (res.dat.length === 1) {
-                    pushDat(res.dat[0])
-                    return;
-                }
+                if (res.dat.length === 1) return getDat(res.dat[0]);
 
                 // If there are multiple possible lines to push, find which one connects to the current shape
                 for (const i of res.dat) {
-                    if (i.connections.includes(next)) pushDat(i);
+                    if (i.connections.includes(next)) return getDat(i);
                 }
             }
         })();
 
-        return function (SDF, x, y, prev = null, itter = 0) {
+        return function (SDF, x, y) {
 
-            let res = marchingSquaresCell(SDF, x, y);
-            if (!res) return;
-            if (prev === null) shapes.push([]); // starting a new shape
+            let shape = [];
+            let next;
+            let iterations = 0;
 
-            let next = getNext(res.connections, prev);
+            do {
+                let res = marchingSquaresCell(SDF, x, y);
 
-            let newPrev = (next + 2) % 4; // figure out what the previos tile is going to be for the next tile
+                // We have reached the end of the shape
+                if (!res) break;
 
-            let nextX = x + sidesKey[next][0] * tileSize;
-            let nextY = y + sidesKey[next][1] * tileSize;
+                // next as the second argument of getNext is the next from the previous iteration
+                next = getNext(res.connections, (next + 2) % 4);
 
-            pushLine(res, next); 
+                x += sidesKey[next][0] * tileSize;
+                y += sidesKey[next][1] * tileSize;
 
-            if (next !== false && itter < 500) getShapeMesh(SDF, nextX, nextY, newPrev, itter + 1);
+                shape.push(getLineDat(res, next));
+
+                iterations ++;
+
+            }  while (next !== false && iterations < 500)     
+
+            return shape;
         }
     })();
 
@@ -283,7 +289,7 @@ const marchingSquares = (() => {
             return sidesKey;
         })();
 
-        // Generate a key that linkes sides together based on how the lines are drawn
+        // Generate a key that links sides together based on how the lines are drawn
         const connectionsKey = (() => {
 
             let key = [];
@@ -347,7 +353,7 @@ const marchingSquares = (() => {
             }
         })();
 
-        function getLineCoords (x, y, lines, cornerValues, code) {
+        function getLineCoords (x, y, lines, cornerValues) {
 
             let res = [];
 
@@ -367,17 +373,16 @@ const marchingSquares = (() => {
 
         return function (SDF, x, y) {
 
-            // Make sure that we havent already drawn this cell this frame
+            // Make sure that we haven't already drawn this cell this frame
             const key = `${x},${y}`;
-            
             if (tilesProcessed.has(key)) return false;
 
             // Get the values at the corners of the cell
-            let cornerValues = cornerKey.map(a => SDF({x: x + a[0] * tileSize, y: y + a[1] * tileSize}));
+            const cornerValues = cornerKey.map(a => SDF({x: x + a[0] * tileSize, y: y + a[1] * tileSize}));
 
-            let code = generateCode(cornerValues);
+            const code = generateCode(cornerValues);
 
-            // We dont want to prevent cells of type 5 and 10 from being drawn twice because those cells are parts of two different shapes
+            // We don't want to prevent cells of type 5 and 10 from being drawn twice because those cells are parts of two different shapes
             if (code !== 5 && code !== 10) tilesProcessed.add(key);
 
             // Quit early if there are no lines to draw
@@ -391,36 +396,51 @@ const marchingSquares = (() => {
         }
     })();
 
-    const tilesProcessed = new Set();
-    let shapes = [[]];
+    const assembleShapes = (() => {
 
-    const assembleShape = (() => {
+        const assembleShape = (() => {
 
-        const same = (a, b) => a.x === b.x && a.y === b.y;
-        const sameWithTwo = (a, b, c) => same(a, b) || same(a, c);
+            const same = (a, b) => a.x === b.x && a.y === b.y;
+            const sameWithTwo = (a, b, c) => same(a, b) || same(a, c);
 
-        return function (points) {
+            return function (points) {
+
+                let assembled = [];
+
+                for (let i = 0; i < points.length - 1; i ++) {
+
+                    if (sameWithTwo(points[i][0], points[i + 1][0], points[i + 1][1])) {
+                        assembled.push(points[i][1]);
+                    } else {
+                        assembled.push(points[i][0]);
+                    }
+                }
+
+                assembled.push(points[points.length - 1][0]);
+
+                return assembled;
+            }
+        })();
+
+        return function (shapes) {
 
             let assembled = [];
 
-            for (let i = 0; i < points.length - 1; i ++) {
+            for (const i of shapes) {
+                if (i.length < 1) continue;
 
-                if (sameWithTwo(points[i][0], points[i + 1][0], points[i + 1][1])) {
-                    assembled.push(points[i][1]);
-                } else {
-                    assembled.push(points[i][0]);
-                }
+                assembled.push(assembleShape(i));
             }
-
-            assembled.push(points[points.length - 1][0]);
 
             return assembled;
         }
     })();
 
-    function generateMeshes (SDF) {
+    function generateMeshes (SDF, boundaries) {
 
-        shapes = [];
+        const b = boundaries;
+
+        let shapes = [];
         tilesProcessed.clear();
 
         if (DISPLAY_GRID) {
@@ -428,43 +448,43 @@ const marchingSquares = (() => {
             strokeWeight(2);
         }
 
-        for (let y = 0; y < height; y += tileSize) {
-            for (let x = 0; x < width; x += tileSize) {
+        for (let y = b.y; y < b.height; y += tileSize) {
+            for (let x = b.x; x < b.width; x += tileSize) {
 
                 if (DISPLAY_GRID) rect(x, y, tileSize, tileSize);
-                getShapeMesh(SDF, x, y);
+                shapes.push(getShapeMesh(SDF, x, y));
             }
         }
+
+        return shapes;
     }
 
-    function getShapes () {
 
-        let assembled = [];
+    return function (SDF, boundaries) {
 
-        for (const i of shapes) {
-            if (i.length < 1) continue;
-
-            assembled.push(assembleShape(i));
-        }
-
-        return assembled;
-    }
-
-    return function (SDF) {
+        tileSize = width/boundaries.resolution;
         
-        generateMeshes(SDF);
+        let shapes = generateMeshes(SDF, boundaries);
 
-        return getShapes();
+        return assembleShapes(shapes);
     }
 })();
 
 const {player, metaballs} = (() => {
     class Metaball {
+
+        static colors = [color(240, 20, 20), color(20, 240, 20), color(20, 20, 240)];
+
+        static getRandomColor () {
+            return Metaball.colors[Math.floor(Math.random() * Metaball.colors.length)];
+        }
+
         constructor (config) {
             this.position = config.position ?? new Vector(config.x ?? 0, config.y ?? 0);
             this.velocity = new Vector();
 
             this.radius = config.radius;
+            this.color = config.color ?? Metaball.getRandomColor();
         }
 
         get x () {
@@ -533,8 +553,8 @@ const scenes = (() => {
 
     const startScene = "play";
 
-    // returns an object with a function for each scene and a function that runs the current scene. This function will also transition to a new scene at the end of the frame if necesary.
-    // the reason that the scene functions are the way they are(an iife returning a function) is so that each scene can have a local scope to store data that is only relevant to the scene.
+    // returns an object with a function for each scene and a function that runs the current scene. This function will also transition to a new scene at the end of the frame if necessary.
+    // the reason that the scene functions are the way they are(an IIFE returning a function) is so that each scene can have a local scope to store data that is only relevant to the scene.
 
     return {
         current: "loading",
@@ -713,6 +733,10 @@ const scenes = (() => {
 
             const displayMetaballs = (() => {
 
+                const boundaries = {x: 0, y: 0, width: 600, height: 600, resolution: 60};
+
+                const distSq = (a, b, c, d) => (a - c) ** 2 + (b - d) ** 2;
+
                 function SDF (point) {
                     let value = 0;
 
@@ -723,21 +747,74 @@ const scenes = (() => {
                     return value;
                 }
 
+                function getClosestMetaball (x, y) {
+
+                    if (metaballs.metaballs.length < 1) return false;
+
+                    let closest = Infinity;
+                    let ind = -1;
+
+                    for (let i = 0; i < metaballs.metaballs.length; i ++) {
+                        let ball = metaballs.metaballs[i]
+                        let d = distSq(ball.x, ball.y, x, y);
+                        if (d < closest) {
+                            closest = d;
+                            ind = i;
+                        }
+                    }
+
+                    return {metaball: metaballs.metaballs[ind], ind};
+                }
+
+                function seperateIntoVoronoi (meshes) {
+
+                    let resultMeshes = [];
+                    let colors = []
+
+                    for (const i of meshes) {
+                        let current = {};
+                        for (const j of i) {
+                            let closest = getClosestMetaball(j.x, j.y);
+
+                            if (!current[closest.ind]) current[closest.ind] = [];
+                            current[closest.ind].push(j);
+                        }
+
+                        for (let key in current) {
+                            resultMeshes.push(current[key]);
+                            colors.push(metaballs.metaballs[key].color);
+                        }
+                    }
+
+                    return {meshes: resultMeshes, colors};
+
+                }
+
                 return function displayMetaballs () {
-                    let meshes = marchingSquares(SDF);
+                    let meshes = marchingSquares(SDF, boundaries);
 
                     fill(240, 20, 20, 200);
                     stroke(20);
                     strokeWeight(5);
 
-                    for (const i of meshes) {
+                    let things = seperateIntoVoronoi(meshes);
+
+                    for (let i = 0; i < things.meshes.length; i ++) {
+
+                        let cur = things.meshes[i];
+                        fill(things.colors[i]);
+
+                        // let closest = getClosestMetaball(i[0].x, i[0].y);
+
+                        // if (closest) fill(closest.metaball.color);
+
                         beginShape();
 
-                        for (const j of i) {
+                        for (const j of cur) {
                             vertex(j.x, j.y);
                         }
 
-                        endShape();
+                        endShape(CLOSE);
                     }
                 }
             })();
@@ -761,7 +838,7 @@ const drawFunction = (() => {
     // for delta time calculations
     let then = performance.now();
 
-    // not using function x() {} notation because iife. iife is simply for organization here
+    // not using function x() {} notation because IIFE. IIFE is simply for organization here
     setup = function() {
     
         // this clears all animation frames preventing them from stacking up if the webpage is reloaded
@@ -795,7 +872,7 @@ const drawFunction = (() => {
 })();
 
 const userInput = (() => {
-    // not using function x() {} notation because iife. iife is simply for organization here
+    // not using function x() {} notation because IIFE. IIFE is simply for organization here
 
     mousePressed = function() {
         click = true;
